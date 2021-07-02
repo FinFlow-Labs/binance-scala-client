@@ -38,7 +38,7 @@ lazy val root = (project in file("."))
   .configs(EndToEndTest)
   .settings(e2eSettings)
   .settings(
-    scalaVersion := scala213,
+    scalaVersion := scala30,
     releaseCrossBuild := true,
     releasePublishArtifactsAction := PgpKeys.publishSigned.value,
     crossScalaVersions := supportedScalaVersions,
