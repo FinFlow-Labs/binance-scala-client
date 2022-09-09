@@ -71,6 +71,22 @@ sealed class HttpClient[F[_]: Logger](implicit
     sendRequest(httpRequest, limiters, weight)
   }
 
+  def put[REQUEST: BodySerializer, RESPONSE](
+      uri: Uri,
+      requestBody: Option[REQUEST],
+      responseAs: ResponseAs[RESPONSE, Any],
+      limiters: List[RateLimiter[F]],
+      headers: Map[String, String] = Map.empty,
+      weight: Int = 1
+  ): F[RESPONSE] = {
+    val preparedRequest = basicRequest
+      .headers(headers)
+      .put(uri)
+      .response(responseAs)
+    val httpRequest = requestBody.fold(preparedRequest)(preparedRequest.body(_))
+    sendRequest(httpRequest, limiters, weight)
+  }
+
   def delete[RESPONSE](
       uri: Uri,
       responseAs: ResponseAs[RESPONSE, Any],
@@ -83,6 +99,49 @@ sealed class HttpClient[F[_]: Logger](implicit
       .delete(uri)
       .response(responseAs)
     sendRequest(httpRequest, limiters, weight)
+  }
+
+  def duplexWs[DataFrame: Decoder](
+      uri: Uri,
+      commandStream: Stream[F, WebSocketFrame]
+  ): Stream[F, DataFrame] = {
+    def webSocketFramePipe(
+        q: Queue[F, Option[Either[Throwable, DataFrame]]]
+    ): Pipe[F, WebSocketFrame.Data[_], WebSocketFrame] = { input =>
+      commandStream
+        .concurrently(
+          input.evalMap {
+            case WebSocketFrame.Text(payload, _, _) =>
+              decode[DataFrame](payload) match {
+                case Left(ex) =>
+                  Logger[F].error(ex)("Failed to decode frame: " + payload) *> q.offer(Some(Left(ex))) // stopping
+                case Right(decoded) =>
+                  q.offer(Some(Right(decoded)))
+              }
+            case _ =>
+              q.offer(None) // stopping
+          }
+        )
+    }
+
+    Stream
+      .resource {
+        for {
+          _     <- Logger[F].debug("ws connecting to: " + uri.toString()).toResource
+          queue <- Queue.unbounded[F, Option[Either[Throwable, DataFrame]]].toResource
+          _ <- basicRequest
+            .get(uri)
+            .response(asWebSocketStreamAlways(Fs2Streams[F])(webSocketFramePipe(queue)))
+            .send(client)
+            .flatMap { response =>
+              Logger[F].debug("response: " + response)
+            }
+            .onError { case err => queue.offer(err.asLeft.some) }
+            .background
+        } yield queue
+      }
+      .flatMap(Stream.fromQueueNoneTerminated(_))
+      .rethrow
   }
 
   def ws[DataFrame: Decoder](

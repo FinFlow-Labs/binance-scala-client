@@ -1,3 +1,15 @@
+import sbt._
+
+Global / onChangedBuildSource := ReloadOnSourceChanges
+ThisBuild / organization := "syther-labs"
+ThisBuild / githubOwner := "syther-labs"
+ThisBuild / githubRepository := "binance-scala-client"
+ThisBuild / githubWorkflowPublishTargetBranches += RefPredicate.Equals(Ref.Branch("sj-fork"))
+ThisBuild / githubWorkflowScalaVersions := Seq("3.1.3")
+ThisBuild / versionScheme := Some("early-semver")
+
+enablePlugins(GitHubPackagesPlugin)
+
 name := "binance-scala-client"
 
 lazy val scala212               = "2.12.16"
@@ -6,7 +18,7 @@ lazy val scala3                 = "3.1.3"
 lazy val supportedScalaVersions = List(scala212, scala213, scala3)
 
 ThisBuild / scalafmtOnCompile := false
-ThisBuild / organization      := "io.github.paoloboni"
+// ThisBuild / organization      := "io.github.paoloboni"
 
 lazy val EndToEndTest = config("e2e") extend Test
 lazy val e2eSettings =
